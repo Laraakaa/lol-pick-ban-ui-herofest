@@ -5,6 +5,8 @@ import DataProviderService from "../data/DataProviderService";
 import State from "./State";
 import DataDragon from "../data/league/DataDragon";
 import logger from "../logging/logger";
+import GlobalContext from '../GlobalContext';
+import WebSocket from 'ws';
 
 const log = logger("Controller");
 
@@ -12,6 +14,8 @@ export default class Controller extends EventEmitter {
   dataProvider: DataProviderService;
   state: State;
   ddragon: DataDragon;
+
+  herofestSocket?: WebSocket
 
   constructor(kwargs: {
     dataProvider: DataProviderService;
@@ -24,6 +28,12 @@ export default class Controller extends EventEmitter {
     this.state = kwargs.state;
     this.ddragon = kwargs.ddragon;
 
+    this.herofestReconnect = this.herofestReconnect.bind(this)
+    this.herofestConnect = this.herofestConnect.bind(this)
+    this.herofest_onopen = this.herofest_onopen.bind(this)
+    this.herofest_onerror = this.herofest_onerror.bind(this)
+    this.herofest_onclose = this.herofest_onclose.bind(this)
+
     this.dataProvider.on("connected", () => {
       log.debug("DataProvider connected!");
       this.state.leagueConnected();
@@ -33,6 +43,40 @@ export default class Controller extends EventEmitter {
       log.debug("DataProvider disconnected!");
       this.state.leagueDisconnected();
     });
+
+    if (GlobalContext.commandLine.heroFest) {
+      log.debug(`Connecting to herofest websocket on ${this.state.getConfig().herofest.ws}`)
+      this.herofestReconnect()
+    }
+  }
+
+  herofest_onopen(): void {
+    log.info(`Connected to herofest websocket on ${this.state.getConfig().herofest.ws}`)
+  }
+
+  herofest_onclose(): void {
+    log.info(`Disconnected from herofest websocket, attempting reconnect in 500ms`)
+    setTimeout(this.herofestReconnect, 500)
+  }
+
+  herofest_onerror(e: WebSocket.ErrorEvent): void {
+    log.error(`Error on herofest websocket: ${JSON.stringify(e)}`)
+  }
+
+  herofestConnect(): void {
+    if (this.herofestSocket) {
+      this.herofestSocket.onopen = this.herofest_onopen
+      this.herofestSocket.onclose = this.herofest_onclose
+      this.herofestSocket.onerror = this.herofest_onerror
+    }
+  }
+
+  herofestReconnect(): void {
+    this.herofestSocket = new WebSocket(this.state.getConfig().herofest.ws, [], {
+      handshakeTimeout: 100000,
+      timeout: 10000
+    } as any)
+    this.herofestConnect()
   }
 
   applyNewState(newState: CurrentState): void {
@@ -82,6 +126,34 @@ export default class Controller extends EventEmitter {
       const action = this.state.data.refreshAction(currentActionBefore);
 
       this.state.newAction(action);
+
+      if (GlobalContext.commandLine.heroFest && this.herofestSocket) {
+        if (action.state !== 'none') {
+          const wsEvent = {
+            type: "lol-pickban",
+            method: action.state,
+            data: {
+              displayName: action.data.displayName,
+              team: action.team === 'blueTeam' ? 'blue' : 'red',
+              champion: {
+                id: action.data.champion.id,
+                name: action.data.champion.name,
+                centeredSplash: `${this.state.getConfig().herofest.host}${action.data.champion.splashCenteredImg}`
+              }
+            }
+          }
+          // {"type":"lol-pickban","method":"pick","data":{"champId":123, "side":"blue" "gamertag":"Liva", "url":"http://....."}}
+ 
+          if (this.herofestSocket.readyState === WebSocket.OPEN) {
+            this.herofestSocket.send(wsEvent)
+          } else {
+            log.warn('Had to discard herofest event because socket is not connected')
+          }
+
+          // log.info(`Sending websocket pick: ${JSON.stringify(action)}`)
+          log.info(`Sending websocket pick: ${JSON.stringify(wsEvent)}`)
+        }
+      }
     }
   }
 }

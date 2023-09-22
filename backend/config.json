@@ -18,5 +18,9 @@
     "patch": "9.19"
   },
   "contentPatch": "latest",
-  "contentCdn": "https://ddragon.leagueoflegends.com/cdn"
+  "contentCdn": "https://ddragon.leagueoflegends.com/cdn",
+  "herofest": {
+    "ws": "ws://10.10.11.5:3155",
+    "host": "http://10.10.11.1:8999"
+  }
 }

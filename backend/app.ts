@@ -22,6 +22,7 @@ GlobalContext.commandLine = {
   leaguePath: argv['leaguePath'] || '',
   experimentalConnector: argv['experimentalConnector'],
   debug: argv['debug'],
+  heroFest: argv['heroFest'],
 };
 if (GlobalContext.commandLine.debug) {
   setLogLevel('debug');
